@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geometry Dash</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <style>
+    body {
+      box-sizing: border-box;
+    }
+    
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+    
+    * {
+      margin: 0;
+      padding: 0;
+    }
+    
+    @keyframes pulse-bg {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+    
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-10px); }
+    }
+    
+    @keyframes spin-slow {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    
+    @keyframes ground-scroll {
+      from { transform: translateX(0); }
+      to { transform: translateX(-80px); }
+    }
+    
+    .game-bg {
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      background-size: 400% 400%;
+      animation: pulse-bg 8s ease infinite;
+    }
+    
+    .floating {
+      animation: float 3s ease-in-out infinite;
+    }
+    
+    .player {
+      transition: transform 0.1s ease;
+    }
+    
+    .player.jumping {
+      animation: spin-slow 0.5s linear;
+    }
+    
+    .obstacle {
+      filter: drop-shadow(0 0 10px rgba(255, 0, 100, 0.8));
+    }
+    
+    .ground-pattern {
+      background: repeating-linear-gradient(
+        90deg,
+        #1a1a2e 0px,
+        #1a1a2e 38px,
+        #16213e 38px,
+        #16213e 40px,
+        #1a1a2e 40px,
+        #1a1a2e 78px,
+        #16213e 78px,
+        #16213e 80px
+      );
+      animation: ground-scroll 0.3s linear infinite;
+    }
+    
+    .ground-pattern.paused {
+      animation-play-state: paused;
+    }
+    
+    .neon-text {
+      text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff, 0 0 40px #00ffff;
+    }
+    
+    .star {
+      position: absolute;
+      background: white;
+      border-radius: 50%;
+      animation: twinkle 2s ease-in-out infinite;
+    }
+    
+    @keyframes twinkle {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+  </style>
+  <style>@view-transition { navigation: auto; }</style>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+ </head>
+ <body class="h-full">
+  <div id="app" class="h-full w-full game-bg overflow-hidden relative" style="font-family: 'Orbitron', sans-serif;"><!-- Stars Background -->
+   <div id="stars" class="absolute inset-0 overflow-hidden pointer-events-none"></div><!-- Game Container -->
+   <div class="h-full w-full flex flex-col"><!-- Header -->
+    <div class="p-4 flex justify-between items-center z-10">
+     <h1 id="game-title" class="text-2xl md:text-3xl font-black text-cyan-400 neon-text tracking-wider">GEOMETRY DASH</h1>
+     <div class="flex items-center gap-4">
+      <div class="bg-black/40 backdrop-blur px-4 py-2 rounded-lg border border-cyan-500/30"><span class="text-cyan-300 text-sm">SCORE</span> <span id="score" class="text-white text-xl font-bold ml-2">0</span>
+      </div>
+      <div class="bg-black/40 backdrop-blur px-4 py-2 rounded-lg border border-pink-500/30"><span class="text-pink-300 text-sm">BEST</span> <span id="best-score" class="text-white text-xl font-bold ml-2">0</span>
+      </div>
+     </div>
+    </div><!-- Game Area -->
+    <div class="flex-1 relative overflow-hidden" id="game-area"><!-- Player -->
+     <div id="player" class="player absolute w-12 h-12 z-20" style="left: 80px; bottom: 80px;">
+      <svg viewbox="0 0 50 50" class="w-full h-full"><defs>
+        <lineargradient id="playerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+         <stop offset="0%" style="stop-color:#00ffff" />
+         <stop offset="100%" style="stop-color:#0080ff" />
+        </lineargradient>
+        <filter id="glow">
+         <fegaussianblur stddeviation="2" result="coloredBlur" />
+         <femerge>
+          <femergenode in="coloredBlur" />
+          <femergenode in="SourceGraphic" />
+         </femerge>
+        </filter>
+       </defs> <rect x="5" y="5" width="40" height="40" fill="url(#playerGrad)" filter="url(#glow)" rx="4" /> <rect x="15" y="15" width="8" height="8" fill="#fff" rx="2" /> <rect x="28" y="15" width="8" height="8" fill="#fff" rx="2" /> <rect x="12" y="12" width="4" height="4" fill="#000" rx="1" /> <rect x="25" y="12" width="4" height="4" fill="#000" rx="1" />
+      </svg>
+     </div><!-- Obstacles Container -->
+     <div id="obstacles" class="absolute inset-0 z-10"></div><!-- Platforms Container -->
+     <div id="platforms" class="absolute inset-0 z-10"></div><!-- Ground -->
+     <div id="ground" class="ground-pattern absolute bottom-0 left-0 right-0 h-20 border-t-4 border-cyan-500/50"></div><!-- Game Over Overlay -->
+     <div id="game-over" class="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-30 hidden">
+      <div class="text-center p-8 bg-gradient-to-br from-purple-900/80 to-pink-900/80 rounded-2xl border border-pink-500/50 shadow-2xl">
+       <h2 class="text-4xl font-black text-pink-400 mb-4 neon-text">GAME OVER</h2>
+       <p class="text-cyan-300 text-xl mb-2">Score: <span id="final-score" class="text-white font-bold">0</span></p>
+       <p class="text-pink-300 text-lg mb-6">Best: <span id="final-best" class="text-white font-bold">0</span></p><button id="restart-btn" class="px-8 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-bold text-lg rounded-lg hover:from-cyan-400 hover:to-blue-400 transition-all transform hover:scale-105 shadow-lg shadow-cyan-500/50"> PLAY AGAIN </button>
+      </div>
+     </div><!-- Start Overlay -->
+     <div id="start-screen" class="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-30">
+      <div class="text-center p-8">
+       <div class="floating mb-8">
+        <svg viewbox="0 0 80 80" class="w-24 h-24 mx-auto"><defs>
+          <lineargradient id="bigPlayerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+           <stop offset="0%" style="stop-color:#00ffff" />
+           <stop offset="100%" style="stop-color:#ff00ff" />
+          </lineargradient>
+         </defs> <rect x="8" y="8" width="64" height="64" fill="url(#bigPlayerGrad)" rx="8" filter="url(#glow)" /> <rect x="22" y="22" width="12" height="12" fill="#fff" rx="3" /> <rect x="46" y="22" width="12" height="12" fill="#fff" rx="3" /> <rect x="18" y="18" width="6" height="6" fill="#000" rx="2" /> <rect x="42" y="18" width="6" height="6" fill="#000" rx="2" />
+        </svg>
+       </div>
+       <h2 class="text-3xl font-black text-white mb-4">TAP OR PRESS SPACE</h2>
+       <p class="text-cyan-300 text-lg mb-6">to jump over obstacles</p><button id="start-btn" class="px-10 py-4 bg-gradient-to-r from-pink-500 to-purple-500 text-white font-bold text-xl rounded-lg hover:from-pink-400 hover:to-purple-400 transition-all transform hover:scale-105 shadow-lg shadow-pink-500/50"> START GAME </button>
+      </div>
+     </div>
+    </div><!-- Instructions -->
+    <div class="p-4 text-center">
+     <p class="text-cyan-300/60 text-sm">Press SPACE or TAP to jump • Double jump available!</p>
+    </div>
+   </div>
+  </div>
+  <script>
+    // Default configuration
+    const defaultConfig = {
+      game_title: 'GEOMETRY DASH'
+    };
+
+    let config = { ...defaultConfig };
+
+    // Game state
+    let gameRunning = false;
+    let score = 0;
+    let bestScore = 0;
+    let playerY = 80;
+    let velocityY = 0;
+    let isJumping = false;
+    let jumpCount = 0;
+    let obstacles = [];
+    let platforms = [];
+    let gameSpeed = 6;
+    let obstacleTimer = 0;
+    let platformTimer = 0;
+    let animationId = null;
+
+    const GRAVITY = 0.8;
+    const JUMP_FORCE = -15;
+    const GROUND_Y = 80;
+    const MAX_JUMPS = 2;
+
+    // DOM Elements
+    const player = document.getElementById('player');
+    const obstaclesContainer = document.getElementById('obstacles');
+    const scoreEl = document.getElementById('score');
+    const bestScoreEl = document.getElementById('best-score');
+    const gameOverEl = document.getElementById('game-over');
+    const startScreenEl = document.getElementById('start-screen');
+    const finalScoreEl = document.getElementById('final-score');
+    const finalBestEl = document.getElementById('final-best');
+    const restartBtn = document.getElementById('restart-btn');
+    const startBtn = document.getElementById('start-btn');
+    const ground = document.getElementById('ground');
+    const gameArea = document.getElementById('game-area');
+    const titleEl = document.getElementById('game-title');
+
+    // Create stars
+    function createStars() {
+      const starsContainer = document.getElementById('stars');
+      for (let i = 0; i < 50; i++) {
+        const star = document.createElement('div');
+        star.className = 'star';
+        star.style.left = Math.random() * 100 + '%';
+        star.style.top = Math.random() * 100 + '%';
+        star.style.width = Math.random() * 3 + 1 + 'px';
+        star.style.height = star.style.width;
+        star.style.animationDelay = Math.random() * 2 + 's';
+        starsContainer.appendChild(star);
+      }
+    }
+
+    // Create platform sequence
+    function createPlatformSequence() {
+      const gameRect = gameArea.getBoundingClientRect();
+      const platformsContainer = document.getElementById('platforms');
+      
+      const sequenceLength = 3 + Math.floor(Math.random() * 3);
+      const platformWidth = 50;
+      let startX = gameRect.width + 200;
+      
+      for (let i = 0; i < sequenceLength; i++) {
+        const platform = document.createElement('div');
+        platform.className = 'absolute';
+        
+        const platformHeight = 60 + Math.random() * 80;
+        const spacing = 80 + Math.random() * 40;
+        
+        platform.style.bottom = platformHeight + 'px';
+        
+        platform.innerHTML = `
+          <svg viewBox="0 0 50 8" class="h-2" style="width: ${platformWidth}px;">
+            <defs>
+              <linearGradient id="platformGrad${i}" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" style="stop-color:#00ff88"/>
+                <stop offset="100%" style="stop-color:#00cc66"/>
+              </linearGradient>
+              <filter id="platformGlow${i}">
+                <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+                <feMerge>
+                  <feMergeNode in="coloredBlur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+            <rect width="50" height="8" fill="url(#platformGrad${i})" rx="1" filter="url(#platformGlow${i})"/>
+            <rect x="2" y="1" width="46" height="6" fill="#00ffaa" rx="1" opacity="0.5"/>
+          </svg>
+        `;
+        
+        platforms.push({
+          element: platform,
+          x: startX,
+          width: platformWidth,
+          height: 8,
+          platformHeight: platformHeight
+        });
+        
+        platformsContainer.appendChild(platform);
+        startX += spacing;
+      }
+    }
+
+    // Create obstacle (cube, spike, or gap)
+    function createObstacle() {
+      const gameRect = gameArea.getBoundingClientRect();
+      const type = Math.random();
+      
+      const obstacle = document.createElement('div');
+      obstacle.className = 'obstacle absolute';
+      obstacle.style.bottom = '80px';
+      
+      if (type < 0.4) {
+        // Ground spike
+        obstacle.innerHTML = `
+          <svg viewBox="0 0 35 40" class="w-8 h-10">
+            <polygon points="17.5,0 35,40 0,40" fill="#ff0066" filter="url(#glow)"/>
+            <polygon points="17.5,8 30,38 5,38" fill="#ff3388"/>
+          </svg>
+        `;
+        obstacle.dataset.width = 35;
+        obstacle.dataset.height = 40;
+      } else if (type < 0.7) {
+        // Tall block
+        const height = 50 + Math.random() * 40;
+        obstacle.innerHTML = `
+          <svg viewBox="0 0 40 ${height}" class="w-9" style="height: ${height}px;">
+            <rect width="40" height="${height}" fill="#ff0066" rx="3" filter="url(#glow)"/>
+            <rect x="4" y="4" width="32" height="${height - 8}" fill="#ff3388" rx="2"/>
+            <line x1="10" y1="0" x2="10" y2="${height}" stroke="#ff2277" stroke-width="1" opacity="0.3"/>
+            <line x1="20" y1="0" x2="20" y2="${height}" stroke="#ff2277" stroke-width="1" opacity="0.3"/>
+            <line x1="30" y1="0" x2="30" y2="${height}" stroke="#ff2277" stroke-width="1" opacity="0.3"/>
+          </svg>
+        `;
+        obstacle.dataset.width = 40;
+        obstacle.dataset.height = height;
+      } else {
+        // Double spike
+        obstacle.innerHTML = `
+          <svg viewBox="0 0 60 50" class="w-14 h-12">
+            <polygon points="15,0 30,50 0,50" fill="#ff0066" filter="url(#glow)"/>
+            <polygon points="15,8 26,48 4,48" fill="#ff3388"/>
+            <polygon points="45,0 60,50 30,50" fill="#ff0066"/>
+            <polygon points="45,8 56,48 34,48" fill="#ff3388"/>
+          </svg>
+        `;
+        obstacle.dataset.width = 60;
+        obstacle.dataset.height = 50;
+      }
+      
+      obstacles.push({
+        element: obstacle,
+        x: gameRect.width + 100,
+        width: parseInt(obstacle.dataset.width),
+        height: parseInt(obstacle.dataset.height)
+      });
+      
+      obstaclesContainer.appendChild(obstacle);
+    }
+
+    // Jump function
+    function jump() {
+      if (jumpCount < MAX_JUMPS) {
+        velocityY = JUMP_FORCE;
+        isJumping = true;
+        jumpCount++;
+        player.classList.add('jumping');
+        setTimeout(() => player.classList.remove('jumping'), 500);
+      }
+    }
+
+    // Check platform collision
+    function checkPlatformCollision(platform) {
+      const playerLeft = 80;
+      const playerRight = playerLeft + 48;
+      const playerBottom = playerY;
+      const playerTop = playerY + 48;
+      
+      const platLeft = platform.x;
+      const platRight = platform.x + platform.width;
+      const platBottom = GROUND_Y + platform.platformHeight;
+      const platTop = platBottom + platform.height;
+      
+      // Check if falling onto platform
+      return playerRight > platLeft && 
+             playerLeft < platRight && 
+             playerBottom <= platTop && 
+             playerBottom >= platBottom &&
+             velocityY >= 0;
+    }
+
+    // Check collision
+    function checkCollision(obstacle) {
+      const playerLeft = 80;
+      const playerRight = playerLeft + 48;
+      const playerBottom = playerY;
+      const playerTop = playerY + 48;
+      
+      const obsLeft = obstacle.x;
+      const obsRight = obstacle.x + obstacle.width;
+      const obsBottom = GROUND_Y;
+      const obsTop = GROUND_Y + obstacle.height;
+      
+      return playerRight > obsLeft && 
+             playerLeft < obsRight && 
+             playerTop > obsBottom && 
+             playerBottom < obsTop;
+    }
+
+    // Game loop
+    function gameLoop() {
+      if (!gameRunning) return;
+      
+      // Apply gravity
+      velocityY += GRAVITY;
+      playerY -= velocityY;
+      
+      // Ground collision
+      if (playerY <= GROUND_Y) {
+        playerY = GROUND_Y;
+        velocityY = 0;
+        isJumping = false;
+        jumpCount = 0;
+      }
+      
+      // Update player position
+      player.style.bottom = playerY + 'px';
+      
+      // Spawn obstacles and platforms
+      obstacleTimer++;
+      platformTimer++;
+      
+      if (obstacleTimer > 140 - Math.min(score / 8, 70)) {
+        createObstacle();
+        obstacleTimer = 0;
+      }
+      if (platformTimer > 200 - Math.min(score / 10, 100)) {
+        createPlatformSequence();
+        platformTimer = 0;
+      }
+      
+      // Update platforms
+      for (let i = platforms.length - 1; i >= 0; i--) {
+        const plat = platforms[i];
+        plat.x -= gameSpeed;
+        plat.element.style.left = plat.x + 'px';
+        
+        // Check platform collision
+        if (checkPlatformCollision(plat)) {
+          playerY = GROUND_Y + plat.platformHeight + plat.height;
+          velocityY = 0;
+          isJumping = false;
+          jumpCount = 0;
+        }
+        
+        // Remove off-screen platforms
+        if (plat.x < -100) {
+          plat.element.remove();
+          platforms.splice(i, 1);
+        }
+      }
+      
+      // Update obstacles
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
+        obs.x -= gameSpeed;
+        obs.element.style.left = obs.x + 'px';
+        
+        // Check collision
+        if (checkCollision(obs)) {
+          gameOver();
+          return;
+        }
+        
+        // Remove off-screen obstacles
+        if (obs.x < -100) {
+          obs.element.remove();
+          obstacles.splice(i, 1);
+          score++;
+          scoreEl.textContent = score;
+          
+          // Increase speed
+          if (score % 10 === 0) {
+            gameSpeed = Math.min(gameSpeed + 0.5, 15);
+          }
+        }
+      }
+      
+      animationId = requestAnimationFrame(gameLoop);
+    }
+
+    // Game over
+    function gameOver() {
+      gameRunning = false;
+      ground.classList.add('paused');
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestScoreEl.textContent = bestScore;
+      }
+      
+      finalScoreEl.textContent = score;
+      finalBestEl.textContent = bestScore;
+      gameOverEl.classList.remove('hidden');
+    }
+
+    // Start game
+    function startGame() {
+      // Reset state
+      gameRunning = true;
+      score = 0;
+      playerY = GROUND_Y;
+      velocityY = 0;
+      isJumping = false;
+      jumpCount = 0;
+      gameSpeed = 6;
+      obstacleTimer = 0;
+      
+      // Clear obstacles and platforms
+      obstacles.forEach(obs => obs.element.remove());
+      obstacles = [];
+      platforms.forEach(plat => plat.element.remove());
+      platforms = [];
+      
+      // Update UI
+      scoreEl.textContent = 0;
+      player.style.bottom = GROUND_Y + 'px';
+      ground.classList.remove('paused');
+      gameOverEl.classList.add('hidden');
+      startScreenEl.classList.add('hidden');
+      
+      // Start loop
+      if (animationId) cancelAnimationFrame(animationId);
+      gameLoop();
+    }
+
+    // Event listeners
+    function handleJump(e) {
+      if (e.code === 'Space' || e.type === 'click' || e.type === 'touchstart') {
+        e.preventDefault();
+        
+        if (!gameRunning && startScreenEl.classList.contains('hidden') && !gameOverEl.classList.contains('hidden')) {
+          return;
+        }
+        
+        if (!startScreenEl.classList.contains('hidden')) {
+          startGame();
+          return;
+        }
+        
+        if (gameRunning) {
+          jump();
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleJump);
+    gameArea.addEventListener('click', handleJump);
+    gameArea.addEventListener('touchstart', handleJump);
+    startBtn.addEventListener('click', startGame);
+    restartBtn.addEventListener('click', startGame);
+
+    // Initialize stars
+    createStars();
+
+    // Element SDK initialization
+    async function onConfigChange(newConfig) {
+      config = { ...defaultConfig, ...newConfig };
+      titleEl.textContent = config.game_title || defaultConfig.game_title;
+    }
+
+    function mapToCapabilities(config) {
+      return {
+        recolorables: [],
+        borderables: [],
+        fontEditable: undefined,
+        fontSizeable: undefined
+      };
+    }
+
+    function mapToEditPanelValues(config) {
+      return new Map([
+        ['game_title', config.game_title || defaultConfig.game_title]
+      ]);
+    }
+
+    // Initialize SDK
+    if (window.elementSdk) {
+      window.elementSdk.init({
+        defaultConfig,
+        onConfigChange,
+        mapToCapabilities,
+        mapToEditPanelValues
+      });
+    }
+  </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9c9e2c2c10aeb17b',t:'MTc3MDQxNzg3MC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
